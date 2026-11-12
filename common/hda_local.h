@@ -221,6 +221,22 @@ struct hda_multi_out {
 	unsigned int spdif_rates;
 	unsigned int spdif_maxbps;
 	u64 spdif_formats;
+	/*
+	 * Added upstream after this header was snapshotted. It must be present,
+	 * even though nothing here uses it: alc269.c allocates and populates
+	 * struct alc_spec (which embeds hda_gen_spec, which embeds this struct),
+	 * but the parser that reads it back lives in the in-tree
+	 * snd_hda_codec_generic module. Omitting this member shrinks
+	 * hda_multi_out from 104 to 96 bytes, shifting every subsequent
+	 * hda_gen_spec field 8 bytes out of alignment with what the kernel
+	 * expects, and try_assign_dacs() then dereferences garbage:
+	 *   BUG: unable to handle page fault for address: 0000000000010000
+	 *   RIP: try_assign_dacs+0x8b/0x6a0 [snd_hda_codec_generic]
+	 * Verify after any kernel update with:
+	 *   pahole -C hda_multi_out --btf_base /sys/kernel/btf/vmlinux \
+	 *       /sys/kernel/btf/snd_hda_codec_generic
+	 */
+	struct snd_kcontrol *share_spdif_kctl;
 };
 
 int snd_hda_create_spdif_share_sw(struct hda_codec *codec,
