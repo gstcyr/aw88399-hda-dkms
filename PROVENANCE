@@ -1,0 +1,34 @@
+Derived works and provenance
+============================
+
+Upstream:      https://github.com/nuclearcat/aw88399-hda-dkms
+Base commit:   7c307da  ("Add wireplumber workaround for steam", 2026-03-15)
+Licence:       GPL-2.0 (see LICENSE). All modules declare MODULE_LICENSE("GPL").
+
+Portions are derived from the Linux kernel, GPL-2.0:
+  realtek/alc269.c, realtek/realtek.h, common/*.h, codecs/generic.h,
+  side-codecs/*, soc-codecs/*, serial-multi-instantiate.c, helpers/*
+
+The Realtek codec changes correspond to the maintained reference guide at
+  https://github.com/nadimkobeissi/16iax10h-linux-sound-saga
+which is authoritative for this hardware and tracks upstream kernel status.
+
+Local changes against 7c307da (see "What we changed" in README.md):
+  Makefile              module names may not contain '/' on kernel 6.16+
+  soc-codecs/aw88399.h  snd_soc_kcontrol_component() shim for kernel 7.0
+  common/hda_local.h    restore struct hda_multi_out::share_spdif_kctl (ABI fix)
+  realtek/alc269.c      port the real Legion fixup body; SND_PCI_QUIRK -> HDA_CODEC_QUIRK
+  dkms.conf             BUILT_MODULE_LOCATION; AUTOINSTALL=no
+  new                   preflight-abi-check.sh, install-dkms-signed.sh,
+                        uninstall-dkms.sh, README.md
+
+Upstream's install.sh and make_deb.sh are intentionally NOT redistributed here:
+install.sh produces unsigned modules that Secure Boot silently refuses, and
+make_deb.sh sets snd_intel_dspcfg.dsp_driver=3, which breaks this hardware.
+
+FIRMWARE NOTICE
+---------------
+firmware/aw88399_acf.bin is Awinic vendor firmware. Its redistribution terms are
+NOT established by this archive and it is NOT covered by the GPL-2.0 above.
+Confirm you are permitted to redistribute it before sharing outside your
+organisation. md5: 2e1e78d6570edfd617ce2c5e088090a9  (152416 bytes)

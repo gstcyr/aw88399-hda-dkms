@@ -10,6 +10,18 @@
 #ifndef __AW88399_H__
 #define __AW88399_H__
 
+#include <sound/control.h>
+#include <sound/soc.h>
+
+/*
+ * snd_soc_kcontrol_component() was dropped from <sound/soc.h> in kernel 7.0.
+ * It was only ever a thin wrapper around snd_kcontrol_chip(), so provide it
+ * here. Defining it as a function-like macro shadows the inline function on
+ * older kernels that still have it, which keeps this building either way.
+ */
+#define snd_soc_kcontrol_component(kcontrol) \
+	((struct snd_soc_component *)snd_kcontrol_chip(kcontrol))
+
 /* registers list */
 #define AW88399_ID_REG			(0x00)
 #define AW88399_SYSST_REG		(0x01)
