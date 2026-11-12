@@ -4,7 +4,6 @@
 set -uo pipefail
 
 PKG=aw88399-hda-dkms
-VER=1.0
 KVER="$(uname -r)"
 
 if [ "$EUID" -ne 0 ]; then
@@ -13,8 +12,25 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 echo "=== Removing DKMS modules ==="
-dkms remove -m "$PKG" -v "$VER" --all || true
-rm -rf "/usr/src/${PKG}-${VER}"
+# Discover versions rather than hardcoding one. This fork uses "1.0-legion1", but a
+# machine may also carry upstream's "1.0" or another fork's "1.0.2", and any of them
+# would leave modules in /updates/dkms that depmod still prefers over the in-tree ones.
+found=0
+while read -r v; do
+    [ -z "$v" ] && continue
+    found=1
+    echo "  removing $PKG/$v"
+    dkms remove -m "$PKG" -v "$v" --all || true
+    rm -rf "/usr/src/${PKG}-${v}"
+done < <(dkms status -m "$PKG" 2>/dev/null \
+         | sed -E "s|^${PKG}[/,] *||; s|[,:].*||" | awk 'NF' | sort -u)
+if [ "$found" -eq 0 ]; then
+    echo "  nothing registered with DKMS"
+    # Catch source trees whose DKMS registration was already lost.
+    for d in /usr/src/${PKG}-*; do
+        [ -d "$d" ] && rm -rf "$d" && echo "  removed stale $d"
+    done
+fi
 
 echo "=== Removing config ==="
 for f in /etc/modprobe.d/aw88399-hda.conf \

@@ -13,12 +13,39 @@ The Realtek codec changes correspond to the maintained reference guide at
   https://github.com/nadimkobeissi/16iax10h-linux-sound-saga
 which is authoritative for this hardware and tracks upstream kernel status.
 
+Independent corroboration of the hda_multi_out ABI fix
+------------------------------------------------------
+The fork at https://github.com/fbottarel/aw88399-hda-dkms (branch legion-fix)
+reached the identical one-line conclusion about struct hda_multi_out roughly ten
+weeks before this tree did:
+
+  1c4f2a8  2026-08-28  "common: fix struct hda_multi_out layout drift causing
+                        NULL deref crash"
+  82bd903  2026-09-03  carries the applied change to common/hda_local.h, plus a
+                        partial Legion fixup body (the DAC 0x02 override only)
+
+Credit for the independent diagnosis belongs to that fork and its contributors.
+Our work was arrived at separately, via kernel BTF and pahole; two forks landing
+on the same missing member is the strongest argument that this is an upstream
+defect rather than a local misconfiguration.
+
+That fork takes a different architectural route for the rest: it keeps
+snd_intel_dspcfg.dsp_driver=3 and solves the resulting loss of the internal
+microphone by diverting the distribution's HDA UCM2 configuration. That is a
+legitimate alternative to the approach here, which stays on the legacy HDA path
+and needs no boot parameter and no diverted system files. It does not fix the
+SND_PCI_QUIRK/HDA_CODEC_QUIRK mismatch (fix 5), so its quirk entries cannot match
+a 16IAX10H's controller SSID; it does not sign modules; and it leaves
+AUTOINSTALL="yes".
+
 Local changes against 7c307da (see "What we changed" in README.md):
   Makefile              module names may not contain '/' on kernel 6.16+
   soc-codecs/aw88399.h  snd_soc_kcontrol_component() shim for kernel 7.0
   common/hda_local.h    restore struct hda_multi_out::share_spdif_kctl (ABI fix)
   realtek/alc269.c      port the real Legion fixup body; SND_PCI_QUIRK -> HDA_CODEC_QUIRK
-  dkms.conf             BUILT_MODULE_LOCATION; AUTOINSTALL=no
+  dkms.conf             BUILT_MODULE_LOCATION; AUTOINSTALL=no;
+                        PACKAGE_VERSION=1.0-legion1 so this tree cannot collide
+                        in /usr/src with upstream's 1.0 or fbottarel's 1.0.2
   new                   preflight-abi-check.sh, install-dkms-signed.sh,
                         uninstall-dkms.sh, README.md
 

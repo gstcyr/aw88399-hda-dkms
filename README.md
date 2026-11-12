@@ -45,6 +45,18 @@ sudo reboot                                          # 3.
 The preflight is unprivileged and changes nothing, so always run it on its own first.
 The installer runs it again as a hard gate and refuses to proceed if it fails.
 
+The installer also gates on the **hardware** before it touches anything (step 1), which
+the preflight does not — the preflight only compares struct layouts against the running
+kernel. It refuses outright if there is no ACPI `AWDZ8399` device, or if the kernel is
+7.3 or newer and already has the driver in-tree. It warns but continues if the codec
+SSID is unsupported, or unreadable because the card failed to register — that second
+case is the broken state you reinstall *from*, so refusing there would lock you out.
+`ALLOW_UNVERIFIED_HW=1` forces past the two fatal checks.
+
+This matters because installing on the wrong machine is not a no-op: the patched
+`snd-hda-codec-alc269` lands in `/updates/dkms`, which `depmod` prefers, so it replaces
+the stock Realtek codec driver on *any* machine with a Realtek codec.
+
 ### Verify after rebooting
 
 ```bash
@@ -110,15 +122,18 @@ affect any kernel:
 | 5 | Quirks registered with `SND_PCI_QUIRK`, which matches the **controller's** PCI subsystem ID (`17aa:3d6c` on a 16IAX10H) — so they can never fire | Switched to `HDA_CODEC_QUIRK`, which matches the **codec** SSID (`17aa:3907`) |
 | 6 | `install.sh` hand-copies `.ko` files, producing unsigned modules that Secure Boot silently refuses; `make_deb.sh` sets a harmful boot parameter | Use `dkms add/build/install` so Ubuntu signs with the enrolled MOK, and verify `modinfo -F signer` before touching boot config |
 
-Diff from upstream is small — 5 files, ~70 insertions:
+The code diff from upstream is small — 5 files, 91 insertions, most of it comment:
 
 ```
 Makefile              20 +-    (1)
 soc-codecs/aw88399.h  12 +     (2)
 common/hda_local.h    16 +     (3)
 realtek/alc269.c      26 +-    (4, 5)
-dkms.conf             11 +-    (1, AUTOINSTALL)
+dkms.conf             34 +-    (1, AUTOINSTALL, PACKAGE_VERSION)
 ```
+
+Fix 6 is not in that diff: it is the two install scripts, which replace upstream's
+`install.sh` and `make_deb.sh` rather than patching them.
 
 ### Why fix 3 was so hard to find
 
@@ -177,7 +192,7 @@ ID — see fix 5. Do not assume the two are equal; on a 16IAX10H they differ
 ## Secure Boot
 
 DKMS signs modules with the machine's own enrolled MOK, so **this cannot be centralised
-— each machine needs its own key.** If none is enrolled, step 6 of the installer
+— each machine needs its own key.** If none is enrolled, step 7 of the installer
 reports `UNSIGNED` and aborts *before* touching any boot configuration, leaving the
 current boot untouched.
 
@@ -190,7 +205,7 @@ signer for all six modules.
 `firmware/aw88399_acf.bin` is the amps' ACF calibration/config blob. Without it the
 modules load and bind correctly and the speakers stay **silent**, with nothing obviously
 wrong in `dmesg` — an easy failure to misdiagnose. Upstream's `install.sh` never
-installs it; `install-dkms-signed.sh` step 8 does, backing up any existing copy.
+installs it; `install-dkms-signed.sh` step 9 does, backing up any existing copy.
 
 It installs to `/lib/firmware/aw88399_acf.bin`, matching `AW88399_ACF_FILE` in
 `soc-codecs/aw88399.h`. Kernel 7.4-rc1 moved upstream to
@@ -206,7 +221,7 @@ driver and is what a stock 7.3+ kernel will want anyway.
 |---|---|
 | Preflight FAILs | Vendored header does not match this kernel. Fix the struct, don't install. See [after a kernel update](#after-every-kernel-update--important) |
 | `HDA Intel PCH` missing from `/proc/asound/cards`, `try_assign_dacs` in `journalctl -k` | ABI mismatch installed anyway, or `dsp_driver=3` is set. Check `/etc/default/grub.d/` for a stale `99-aw88399-hda.cfg` |
-| Modules load, amps bind, speakers silent | Missing/wrong firmware — re-run the installer and check step 7 |
+| Modules load, amps bind, speakers silent | Missing/wrong firmware — re-run the installer and check step 9 |
 | Modules absent from `lsmod` | Unsigned under Secure Boot. `dmesg \| grep -i 'key was rejected'` |
 | Nothing happens at all, no `aw88399` lines in `dmesg` | SSID not matched — see [Hardware coverage](#hardware-coverage) |
 | `Bass Speaker` has no volume control | Fix 4 not applied — the fixup is the empty upstream stub |
@@ -241,4 +256,21 @@ archive outside your organisation.
 ### Worth sending upstream
 
 Fixes 3, 4 and 5 are genuine defects in `nuclearcat/aw88399-hda-dkms` that affect every
-user of that repo, not local configuration. They are worth reporting upstream.
+user of that repo, not local configuration. They are worth reporting upstream. So is the
+missing licence file — upstream ships none despite the same GPL-2.0 obligations.
+
+Fix 3 has independent corroboration. The fork at
+[`fbottarel/aw88399-hda-dkms`](https://github.com/fbottarel/aw88399-hda-dkms) (branch
+`legion-fix`) reached the identical one-line conclusion about `struct hda_multi_out`
+about ten weeks earlier — commit `1c4f2a8`, *"fix struct hda_multi_out layout drift
+causing NULL deref crash"*, applied in `82bd903`. Credit for that independent diagnosis
+is theirs; this tree arrived at it separately via BTF and `pahole`. Two forks landing on
+the same missing member is the strongest possible argument that it is an upstream defect.
+
+That fork is worth knowing about if you are choosing between them. It converges on fixes
+1, 2 and 3, and adds a `WARN_ON_ONCE(!cdc)` guard this tree does not have. It differs in
+that it **keeps `dsp_driver=3`** and solves the resulting loss of the internal microphone
+by diverting the distribution's HDA UCM2 configs — a legitimate route, at the cost of
+fighting `alsa-ucm-conf` package upgrades indefinitely. It does not carry fix 5, so its
+quirk entries cannot match a 16IAX10H's controller SSID; it does not sign modules; and it
+leaves `AUTOINSTALL="yes"`. See `PROVENANCE` for detail.
